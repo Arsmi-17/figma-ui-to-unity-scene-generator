@@ -1,0 +1,334 @@
+<button id="exportBtn">Export to JSON</button>
+<button id="exportUnityBtn" style="margin-left: 8px;">Export Unity Package</button>
+<div style="margin-top: 8px; color: #555; font-size: 12px; line-height: 1.4;">
+  Use Unity Package for accurate Unity scene generation with PNG assets.
+</div>
+<div id="statusMessage" style="display: none; margin-top: 10px; padding: 10px; background: #eef3ff; border: 1px solid #88aaff; border-radius: 4px; color: #1f3f8f;"></div>
+<div id="errorSection" style="display: none; margin-top: 10px; padding: 10px; background: #ffebee; border: 1px solid #f44336; border-radius: 4px;">
+  <p id="errorMessage" style="color: #d32f2f; margin: 0 0 10px 0;"></p>
+  <button id="copyErrorBtn" style="margin-right: 10px;">Copy Error Details</button>
+  <button id="copyNodeBtn">Copy Node Data</button>
+</div>
+<div id="successMessage" style="display: none; margin-top: 10px; padding: 10px; background: #e8f5e8; border: 1px solid #4caf50; border-radius: 4px; color: #2e7d32;">
+  <p id="successText" style="margin: 0 0 8px 0;"></p>
+  <p id="exportLocation" style="margin: 0 0 10px 0; word-break: break-word;"></p>
+  <div id="analysisSection" style="display: none; margin: 0 0 10px 0;">
+	<div style="font-weight: 600; margin-bottom: 4px;">Python analysis</div>
+	<pre id="analysisText" style="white-space: pre-wrap; overflow: auto; max-height: 220px; margin: 0; padding: 8px; background: #f7fff7; border: 1px solid #b7dfb7; border-radius: 4px; color: #1f3d1f; font-size: 11px; line-height: 1.35;"></pre>
+  </div>
+  <button id="downloadAgainBtn" style="display: none; margin-right: 10px;">Save JSON File</button>
+  <button id="copyJsonBtn" style="display: none;">Copy JSON</button>
+</div>
+
+<script>
+  let lastErrorData = null;
+  let lastNodeData = null;
+  let lastExportJson = null;
+  let lastExportFileName = null;
+  let lastAnalysisText = "";
+  let exportTimeout = null;
+
+  document.getElementById("exportBtn").addEventListener("click", () => {
+	beginExport("export-json", "Exporting selected Figma node...");
+  });
+
+  document.getElementById("exportUnityBtn").addEventListener("click", () => {
+	beginExport("export-unity-package", "Exporting Unity package with PNG assets...");
+  });
+
+  function beginExport(type, message) {
+	hideMessages();
+	document.getElementById("exportBtn").disabled = true;
+	document.getElementById("exportUnityBtn").disabled = true;
+	showStatus(message);
+	exportTimeout = setTimeout(() => {
+	  showStatus("Still waiting for Figma. If this stays here, select a smaller frame/group and try again, or open Plugins > Development > Open Console for errors.");
+	  document.getElementById("exportBtn").disabled = false;
+	  document.getElementById("exportUnityBtn").disabled = false;
+	}, 10000);
+	parent.postMessage({ pluginMessage: { type } }, "*");
+  }
+
+  document.getElementById("copyErrorBtn").addEventListener("click", () => {
+	if (lastErrorData) {
+	  navigator.clipboard.writeText(JSON.stringify(lastErrorData, null, 2))
+		.then(() => alert("Error details copied to clipboard!"))
+		.catch(() => alert("Failed to copy error details"));
+	}
+  });
+
+  document.getElementById("copyNodeBtn").addEventListener("click", () => {
+	if (lastNodeData) {
+	  navigator.clipboard.writeText(JSON.stringify(lastNodeData, null, 2))
+		.then(() => alert("Node data copied to clipboard!"))
+		.catch(() => alert("Failed to copy node data"));
+	}
+  });
+
+  document.getElementById("downloadAgainBtn").addEventListener("click", async () => {
+	if (lastExportJson && lastExportFileName) {
+	  const result = await saveJson(lastExportJson, lastExportFileName);
+	  showSuccess(lastExportFileName, result.mode, lastAnalysisText);
+	}
+  });
+
+  document.getElementById("copyJsonBtn").addEventListener("click", () => {
+	if (lastExportJson) {
+	  navigator.clipboard.writeText(lastExportJson)
+		.then(() => alert("JSON copied to clipboard!"))
+		.catch(() => alert("Failed to copy JSON"));
+	}
+  });
+
+  function hideMessages() {
+	document.getElementById("errorSection").style.display = "none";
+	document.getElementById("successMessage").style.display = "none";
+	document.getElementById("statusMessage").style.display = "none";
+  }
+
+  function showStatus(message) {
+	document.getElementById("statusMessage").textContent = message;
+	document.getElementById("statusMessage").style.display = "block";
+  }
+
+  function showError(message, errorData, nodeData) {
+	clearPendingExport();
+	hideMessages();
+	document.getElementById("errorMessage").textContent = message;
+	document.getElementById("errorSection").style.display = "block";
+	lastErrorData = errorData;
+	lastNodeData = nodeData;
+  }
+
+  function clearPendingExport() {
+	if (exportTimeout) {
+	  clearTimeout(exportTimeout);
+	  exportTimeout = null;
+	}
+	document.getElementById("exportBtn").disabled = false;
+	document.getElementById("exportUnityBtn").disabled = false;
+  }
+
+  function getExportFileName(kind) {
+	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+	return kind === "unity-package"
+	  ? `figma-unity-package-${stamp}.json`
+	  : `figma-export-${stamp}.json`;
+  }
+
+  function pngSize(encoded) {
+	try {
+	  const binary = atob(encoded);
+	  if (binary.length < 24) return null;
+	  if (
+		binary.charCodeAt(0) !== 0x89 ||
+		binary.charCodeAt(1) !== 0x50 ||
+		binary.charCodeAt(2) !== 0x4e ||
+		binary.charCodeAt(3) !== 0x47
+	  ) {
+		return null;
+	  }
+
+	  const width =
+		(binary.charCodeAt(16) << 24) |
+		(binary.charCodeAt(17) << 16) |
+		(binary.charCodeAt(18) << 8) |
+		binary.charCodeAt(19);
+	  const height =
+		(binary.charCodeAt(20) << 24) |
+		(binary.charCodeAt(21) << 16) |
+		(binary.charCodeAt(22) << 8) |
+		binary.charCodeAt(23);
+	  return [width >>> 0, height >>> 0];
+	} catch (err) {
+	  return null;
+	}
+  }
+
+  function buildPythonAnalysis(json, fileName) {
+	let packageData;
+	try {
+	  packageData = JSON.parse(json);
+	} catch (err) {
+	  return "Could not parse JSON for analysis.";
+	}
+
+	if (!packageData || packageData.format !== "figma-unity-package") {
+	  const nodes = Array.isArray(packageData) ? packageData.length : 1;
+	  return [
+		`Package: ${fileName}`,
+		"Format: standard Figma JSON",
+		`Top-level nodes: ${nodes}`,
+		`JSON size: ${json.length.toLocaleString()} chars`,
+	  ].join("\n");
+	}
+
+	const screens = packageData.screens || [{
+	  name: packageData.name || "Package",
+	  nodes: packageData.nodes || [],
+	  ...(packageData.root || {}),
+	}];
+	const assets = packageData.assets || {};
+	const assetValues = Object.values(assets);
+	const uniquePayloads = new Set(assetValues).size;
+	const lines = [];
+
+	lines.push(`Package: ${fileName}`);
+	lines.push(`Version: ${packageData.version}  Screens: ${screens.length}  Assets: ${assetValues.length}  Unique PNGs: ${uniquePayloads}`);
+	if (assetValues.length !== uniquePayloads) {
+	  lines.push(`Warning: package contains ${assetValues.length - uniquePayloads} duplicate encoded assets.`);
+	}
+
+	screens.forEach((screen, index) => {
+	  const width = Number(screen.width || 1);
+	  const height = Number(screen.height || 1);
+	  const screenArea = Math.max(1, width * height);
+	  const nodes = screen.nodes || [];
+	  const counts = {};
+	  const suspicious = [];
+	  const sizeMismatches = [];
+
+	  nodes.forEach((node) => {
+		const kind = node.kind || "unknown";
+		counts[kind] = (counts[kind] || 0) + 1;
+
+		const area = Number(node.width || 0) * Number(node.height || 0);
+		const ratio = area / screenArea;
+		if (["button", "input-field", "logo", "background", "panel-background"].includes(kind) && ratio > 0.12) {
+		  suspicious.push({ ratio, kind, name: node.name, width: node.width, height: node.height });
+		}
+
+		const assetPath = node.asset;
+		if (assetPath && assets[assetPath]) {
+		  const size = pngSize(assets[assetPath]);
+		  if (size) {
+			const nodeWidth = Number(node.width || 0);
+			const nodeHeight = Number(node.height || 0);
+			if (Math.abs(size[0] - nodeWidth) > 2 || Math.abs(size[1] - nodeHeight) > 2) {
+			  sizeMismatches.push({ kind, name: node.name, nodeWidth, nodeHeight, pngWidth: size[0], pngHeight: size[1] });
+			}
+		  }
+		}
+	  });
+
+	  lines.push("");
+	  lines.push(`Screen ${index + 1}: ${screen.name}  ${width}x${height}`);
+	  lines.push(`  Nodes: ${nodes.length}  Kinds: ${JSON.stringify(counts)}`);
+	  if (screen.exportedAssetCount !== undefined) {
+		lines.push(`  Exported assets for screen: ${screen.exportedAssetCount}/${screen.exportLimit}`);
+	  }
+	  if (screen.truncated) {
+		lines.push("  Warning: this screen hit the per-screen export limit; some objects may be missing.");
+	  }
+	  if ((counts["screen-background"] || 0) !== 1) {
+		lines.push("  Warning: expected exactly one screen-background raster for vector/background alignment.");
+	  }
+	  if (suspicious.length) {
+		lines.push("  Suspicious large semantic nodes:");
+		suspicious
+		  .sort((a, b) => b.ratio - a.ratio)
+		  .forEach((item) => lines.push(`    ${item.kind.padEnd(12)} ${(item.ratio * 100).toFixed(1).padStart(6)}% ${item.width}x${item.height}  ${item.name}`));
+	  }
+	  if (sizeMismatches.length) {
+		lines.push("  PNG size differs from JSON box; Unity may need render-bound placement for these:");
+		sizeMismatches.slice(0, 20).forEach((item) => {
+		  lines.push(`    ${item.kind.padEnd(18)} json=${item.nodeWidth}x${item.nodeHeight} png=${item.pngWidth}x${item.pngHeight}  ${item.name}`);
+		});
+	  }
+	});
+
+	return lines.join("\n");
+  }
+
+  function downloadJson(json, fileName) {
+	const blob = new Blob([json], { type: "application/json" });
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement("a");
+	link.href = url;
+	link.download = fileName;
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function saveJson(json, fileName) {
+	const blob = new Blob([json], { type: "application/json" });
+
+	if (window.showSaveFilePicker) {
+	  try {
+		const handle = await window.showSaveFilePicker({
+		  suggestedName: fileName,
+		  types: [
+			{
+			  description: "JSON file",
+			  accept: { "application/json": [".json"] },
+			},
+		  ],
+		});
+		const writable = await handle.createWritable();
+		await writable.write(blob);
+		await writable.close();
+		return { mode: "save-dialog" };
+	  } catch (err) {
+		if (err && err.name === "AbortError") {
+		  return { mode: "cancelled" };
+		}
+		console.warn("Save As dialog failed; falling back to download", err);
+	  }
+	}
+
+	downloadJson(json, fileName);
+	return { mode: "download" };
+  }
+
+  function showSuccess(fileName, saveMode, analysisText) {
+	clearPendingExport();
+	let locationText = "Location: ";
+	if (saveMode === "save-dialog") {
+	  locationText += "the folder you selected in the Save As dialog.";
+	} else if (saveMode === "cancelled") {
+	  locationText += "not saved because the Save As dialog was cancelled.";
+	} else if (saveMode === "ready") {
+	  locationText += "not saved yet. Click Save JSON File below to choose where to export it.";
+	} else {
+	  locationText += "your default Downloads folder. Figma did not expose the exact Windows path.";
+	}
+
+	hideMessages();
+	document.getElementById("successText").textContent =
+	  saveMode === "ready"
+		? "JSON is ready."
+		: "JSON file saved.";
+	document.getElementById("exportLocation").innerHTML =
+	  `File: <strong>${fileName}</strong><br>` +
+	  `${locationText}<br>` +
+	  "In Unity choose Tools > Figma > Select Figma JSON And Build, then select this file.<br>" +
+	  "You can also copy it with the button below.";
+	if (analysisText) {
+	  document.getElementById("analysisText").textContent = analysisText;
+	  document.getElementById("analysisSection").style.display = "block";
+	} else {
+	  document.getElementById("analysisSection").style.display = "none";
+	}
+	document.getElementById("downloadAgainBtn").style.display = "inline-block";
+	document.getElementById("copyJsonBtn").style.display = "inline-block";
+	document.getElementById("successMessage").style.display = "block";
+  }
+
+  window.onmessage = (event) => {
+	if (!event.data || !event.data.pluginMessage) return;
+	const { type, json, error, errorData, nodeData, kind, suggestedFileName } = event.data.pluginMessage;
+	
+	if (type === "export-done") {
+	  const fileName = suggestedFileName || getExportFileName(kind);
+	  const analysisText = buildPythonAnalysis(json, fileName);
+	  lastExportJson = json;
+	  lastExportFileName = fileName;
+	  lastAnalysisText = analysisText;
+	  showSuccess(fileName, "ready", analysisText);
+	} else if (type === "export-error") {
+	  showError(error || "An error occurred while processing the node", errorData, nodeData);
+	}
+  };
+</script>

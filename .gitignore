@@ -1,0 +1,56 @@
+# OS and editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.tmp
+*.temp
+*.log
+
+# Local environment files
+.env
+.env.*
+
+# Figma plugin dependencies and generated exports
+Figma Plugin/node_modules/
+Figma Plugin/exports/
+Figma Plugin/npm-debug.log*
+Figma Plugin/yarn-debug.log*
+Figma Plugin/yarn-error.log*
+Figma Plugin/pnpm-debug.log*
+Figma Plugin/build/*.map
+
+# Unity generated folders
+Figma2Unity_UnityProject/[Ll]ibrary/
+Figma2Unity_UnityProject/[Tt]emp/
+Figma2Unity_UnityProject/[Oo]bj/
+Figma2Unity_UnityProject/[Ll]ogs/
+Figma2Unity_UnityProject/[Uu]ser[Ss]ettings/
+Figma2Unity_UnityProject/[Mm]emoryCaptures/
+Figma2Unity_UnityProject/[Rr]ecordings/
+
+# Unity local build output
+Figma2Unity_UnityProject/[Bb]uild/
+Figma2Unity_UnityProject/[Bb]uilds/
+Figma2Unity_UnityProject/[Aa]sset[Bb]undles/
+
+# Unity generated IDE files
+Figma2Unity_UnityProject/*.csproj
+Figma2Unity_UnityProject/*.sln
+Figma2Unity_UnityProject/*.slnx
+Figma2Unity_UnityProject/*.user
+Figma2Unity_UnityProject/*.pidb
+Figma2Unity_UnityProject/*.booproj
+Figma2Unity_UnityProject/*.svd
+Figma2Unity_UnityProject/*.pdb
+Figma2Unity_UnityProject/*.mdb
+Figma2Unity_UnityProject/*.opendb
+Figma2Unity_UnityProject/*.VC.db
+
+# Unity crash and profiler artifacts
+Figma2Unity_UnityProject/sysinfo.txt
+Figma2Unity_UnityProject/*.stackdump
+Figma2Unity_UnityProject/*.apk
+Figma2Unity_UnityProject/*.aab
+
